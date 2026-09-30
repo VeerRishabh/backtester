@@ -1,0 +1,27 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Backtester</title>
+<style>:root{--bg:#fff;--fg:#111;--bd:#ddd}@media(prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--bd:#333}}
+body{font:14px system-ui;background:var(--bg);color:var(--fg);max-width:900px;margin:2rem auto;padding:0 1rem}
+input,select,button{font:inherit;padding:.35rem;margin:.15rem}section{border:1px solid var(--bd);border-radius:8px;padding:1rem;margin:1rem 0}
+table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--bd);padding:.3rem;text-align:right}th:first-child,td:first-child{text-align:left}svg{width:100%;height:280px}</style>
+<h1>📈 Backtesting Platform</h1>
+<section>Data: <button onclick=synth()>Generate synthetic "DEMO"</button> or upload CSV for symbol <input id=sym size=6 value=AAPL> <input type=file id=f><button onclick=upl()>Upload</button> <span id=msg></span></section>
+<section>Symbol <input id=s size=6 value=DEMO> Strategy <select id=st></select> Params (JSON) <input id=pr size=26 value='{"fast":50,"slow":200}'>
+<button onclick=go()>Run</button><button onclick=cmp()>Compare all</button><button onclick=exp()>Export CSV</button>
+<svg id=ch viewBox="0 0 800 280" preserveAspectRatio=none></svg><div id=out></div></section>
+<script>
+const $=id=>document.getElementById(id);const C=["#2a7de1","#e0772a","#3aa655","#b04bd6","#999"];
+async function j(u,o){const r=await fetch(u,o);const d=await r.json();if(!r.ok)throw new Error(typeof d.detail=="string"?d.detail:JSON.stringify(d.detail));return d}
+fetch("/strategies").then(r=>r.json()).then(l=>$("st").innerHTML=l.map(x=>`<option>${x}</option>`).join(""));
+const body=()=>({symbol:$("s").value,strategy:$("st").value,params:JSON.parse($("pr").value||"{}")});
+async function synth(){$("msg").textContent=JSON.stringify(await j("/data/synthetic?symbol=DEMO",{method:"POST"}))}
+async function upl(){const fd=new FormData();fd.append("file",$("f").files[0]);try{$("msg").textContent=JSON.stringify(await j("/data/upload?symbol="+$("sym").value,{method:"POST",body:fd}))}catch(e){$("msg").textContent=e.message}}
+function draw(series){const all=series.flatMap(s=>s.v),lo=Math.min(...all),hi=Math.max(...all);
+$("ch").innerHTML=series.map((s,i)=>`<polyline fill=none stroke="${C[i%5]}" stroke-width=1.5 points="${s.v.map((y,k)=>(k/(s.v.length-1)*800).toFixed(1)+","+(275-(y-lo)/(hi-lo||1)*270).toFixed(1)).join(" ")}"/>`).join("")+
+series.map((s,i)=>`<text x=8 y=${16+i*14} fill="${C[i%5]}" font-size=11>${s.n}</text>`).join("")}
+function table(rows){const k=Object.keys(rows[0].m);return `<table><tr><th></th>${rows.map(r=>`<th>${r.n}</th>`).join("")}</tr>`+k.map(x=>`<tr><td>${x}</td>${rows.map(r=>`<td>${r.m[x]??"–"}</td>`).join("")}</tr>`).join("")+"</table>"}
+async function go(){try{const d=await j("/backtest",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body())});
+draw([{n:$("st").value,v:d.equity},{n:"buy & hold",v:d.benchmark}]);$("out").innerHTML=table([{n:$("st").value,m:d.metrics},{n:"buy&hold",m:d.benchmark_metrics}])}catch(e){$("out").textContent=e.message}}
+async function cmp(){try{const L=[...$("st").options].map(o=>({strategy:o.value}));const d=await j("/compare",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({symbol:$("s").value,strategies:L})});
+draw(d.map(x=>({n:x.strategy,v:x.equity})));$("out").innerHTML=table(d.map(x=>({n:x.strategy,m:x.metrics})))}catch(e){$("out").textContent=e.message}}
+async function exp(){const r=await fetch("/export",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body())});const a=document.createElement("a");a.href=URL.createObjectURL(await r.blob());a.download="backtest.csv";a.click()}
+</script>
